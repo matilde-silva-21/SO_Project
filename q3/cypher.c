@@ -17,6 +17,8 @@
 
 char wordBuffer[WORDSIZE];
 
+void flush(char* buffer, int buffersize);
+
 typedef struct{
     char target[WORDSIZE];
     char swap[WORDSIZE];
@@ -79,6 +81,34 @@ int hasPunct(int *where){
 }
 
 /**
+ * @brief Compares two words to see if they're the same
+ * 
+ * @param w1 the first word
+ * @param w2 the second word
+ * @return int 1 if they're the same, 0 otherwise
+ */
+int cmpwrd(char* w1, char* w2){
+    int where;
+    if(strlen(w1) == strlen(w2)) return (!strcmp(w1, w2));
+    else{
+        int i = 0, size;
+        if(strlen(w1) < strlen(w2)) size = strlen(w1);
+        else size = strlen(w2);
+        while(i < size){
+            if(w2[i] == w1[0]) break;
+            else i++;
+        }
+        if(i == size-1) return 0;
+        else{
+            for(int j = 0; j < size; j++)
+                if(w2[i+j] != w1[j]) return 0;
+        }
+        return 1; 
+    }
+}
+
+
+/**
  * @brief Compares wordBuffer against the items in the cypher table.
  * 
  * @param cyphr the cypher table
@@ -88,20 +118,41 @@ int hasPunct(int *where){
  */
 int compareCypher(cypher* cyphr, int* index, int* target){
     for(int i=0;i<cyphr->size;i++){
-        if(!strncmp(wordBuffer, cyphr->table[i].target,
-                strlen(cyphr->table[i].target))){
-            *index = i;
-            *target =0;
-            return 0;
+            if(!cmpwrd(wordBuffer, cyphr->table[i].target)){
+                if(cmpwrd(wordBuffer, cyphr->table[i].swap)){
+                    *index = i;
+                    *target = 1;
+                    return 0;
+                }
+            }
+            else{
+                *index = i;
+                *target = 0;
+                return 0;
+            }
         }
-        if(!strncmp(wordBuffer, cyphr->table[i].swap,
-                strlen(cyphr->table[i].swap))){
-            *index = i;
-            *target = 1;
-            return 0;
+    return 1;
+}
+
+void cypherWord(char* cypher){
+    char* word;
+    strcpy(word, wordBuffer);
+    flush(wordBuffer, WORDSIZE);
+    int j, i=0;
+    for(j=0;ispunct(word[j]);j++){
+        wordBuffer[i] = word[j];
+        i++;
+    }
+    for(int k = 0; k <strlen(cypher);k++){
+        wordBuffer[i] = cypher[k];
+        i++;
+    }
+    for(;j < strlen(word);j++){
+        if(ispunct(word[j])){
+            wordBuffer[i] = word[j];
+            i++;
         }
     }
-    return 1;
 }
 
 /**
@@ -190,14 +241,17 @@ char* cypherText(cypher* cyphr, char* text){
             foundWord=1;
         }
         if(foundWord){
-            int index, target;
-            if(!compareCypher(cyphr, &index, &target)){
+            int i, target;
+            if(!compareCypher(cyphr, &i, &target)){
+                if(!target) cypherWord(cyphr->table[i].target);
+                else cypherWord(cyphr->table[i].swap);
+                /*
                 int where;
                 if(!hasPunct(&where)){
                     if(!where) handlePrefix(cyphr, index, target);
                     else handleSuffix(cyphr, index, where, target);
                 }
-                else handleNoffix(cyphr, index, target);
+                else handleNoffix(cyphr, index, target);*/
             }
             strcat(cypheredText, wordBuffer);
             foundWord=0;
