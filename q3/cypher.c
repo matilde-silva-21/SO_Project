@@ -11,14 +11,15 @@
 #define WRITE_END 1
 
 #define READ "r"
-#define BUFFERSIZE 256
+#define BUFFERSIZE 264
+#define WORDSIZE 64
 #define PBUFFSIZE 8
 
-char wordBuffer[64];
+char wordBuffer[WORDSIZE];
 
 typedef struct{
-    char target[64];
-    char swap[64];
+    char target[WORDSIZE];
+    char swap[WORDSIZE];
 }cypherEntry;
 
 typedef struct{
@@ -26,6 +27,12 @@ typedef struct{
     int size;
 }cypher;
 
+/**
+ * @brief Loads cypher from cypher.txt into memory
+ * 
+ * @param cyphr a pointer to the cypher struct
+ * @return cypher* the loaded cypher struct
+ */
 cypher* loadCypher(cypher* cyphr){
     int nbytes, bufferSize = BUFFERSIZE;
     char* buffer = (char*) malloc(sizeof(char) * bufferSize);
@@ -52,10 +59,16 @@ cypher* loadCypher(cypher* cyphr){
         target=strtok(NULL, " ");
         i++;
     }while(target != NULL);
-
+    free(buffer);
     return cyphr;
 }
 
+/**
+ * @brief Sees if a string has punctuation in it
+ * 
+ * @param where the index where the punctuation starts
+ * @return int 0 if there is punctuation, 1 otherwise
+ */
 int hasPunct(int *where){
     for(int i = 0; i < strlen(wordBuffer); i++)
         if(ispunct(wordBuffer[i])){
@@ -65,6 +78,14 @@ int hasPunct(int *where){
     return 1;
 }
 
+/**
+ * @brief Compares wordBuffer against the items in the cypher table.
+ * 
+ * @param cyphr the cypher table
+ * @param index the index of the cypher table (return value)
+ * @param target 0 if the word matches the target entry, 1 otherwise
+ * @return int 0 if the wordBuffer is present in the cypher table, 1 otherwise
+ */
 int compareCypher(cypher* cyphr, int* index, int* target){
     for(int i=0;i<cyphr->size;i++){
         if(!strncmp(wordBuffer, cyphr->table[i].target,
@@ -83,6 +104,13 @@ int compareCypher(cypher* cyphr, int* index, int* target){
     return 1;
 }
 
+/**
+ * @brief Cyphers words when there's punctuation at the start of the string
+ * 
+ * @param cyphr the cypher table
+ * @param index index of the cypher table to be accessed
+ * @param target if 0 swaps target for swap, if 1 swaps swap for target
+ */
 void handlePrefix(cypher* cyphr, int index, int target){
     char lastChar = wordBuffer[strlen(wordBuffer)-1];
     int i=1;
@@ -95,6 +123,14 @@ void handlePrefix(cypher* cyphr, int index, int target){
     wordBuffer[i+1]='\0';
 }
 
+/**
+ * @brief Cyphers words when there's punctuation at the end of the string
+ * 
+ * @param cyphr the cypher table
+ * @param index the index of the cypher table to be accessed
+ * @param where index of the string where punctuation starts
+ * @param target if 0 swaps target for swap, if 1 swaps swap for target
+ */
 void handleSuffix(cypher* cyphr, int index, int where, int target){
     char punct[PBUFFSIZE];
     int i = where;
@@ -114,6 +150,13 @@ void handleSuffix(cypher* cyphr, int index, int where, int target){
     wordBuffer[i+strlen(punct)]='\0';
 }
 
+/**
+ * @brief Cyphers words when there is no punctuation involved
+ * 
+ * @param cyphr the cypher table
+ * @param index the index of the cypher table
+ * @param target if 0 swaps target for swap, if 1 swaps swap for target
+ */
 void handleNoffix(cypher* cyphr, int index, int target){
     char lastChar = wordBuffer[strlen(wordBuffer)-1];
     int i=0;
@@ -126,6 +169,13 @@ void handleNoffix(cypher* cyphr, int index, int target){
     wordBuffer[i+1]='\0';
 }
 
+/**
+ * @brief Cyphers a piece of text
+ * 
+ * @param cyphr the cypher table
+ * @param text the text to be cyphered
+ * @return char* pointer to the cyphered text
+ */
 char* cypherText(cypher* cyphr, char* text){
     char* cypheredText;
     strcpy(cypheredText, "\0");
@@ -140,7 +190,7 @@ char* cypherText(cypher* cyphr, char* text){
             foundWord=1;
         }
         if(foundWord){
-            int index, target;
+            int where;
             if(!compareCypher(cyphr, &index, &target)){
                 int where;
                 if(!hasPunct(&where)){
@@ -157,9 +207,55 @@ char* cypherText(cypher* cyphr, char* text){
     return cypheredText;
 }
 
-void flush(char* buffer){
-    for(int i = 0; i <BUFFERSIZE;i++)
+/**
+ * @brief Flushes a buffer a buffer 
+ * 
+ * @param buffer pointer to the buffer to be flushed
+ * @param buffersize the size of the buffer
+ */
+void flush(char* buffer, int buffersize){
+    for(int i = 0; i <buffersize;i++)
         buffer[i]='\0';
+}
+
+/**
+ * @brief Reads text from a file descriptor
+ * 
+ * @param fd the file descriptor
+ * @param text where the read text will be stored
+ * @return char* pointer to the read text
+ */
+char* rfrom(int fd, char* text){
+    char buffer[BUFFERSIZE];
+    int textsize = BUFFERSIZE, nbytes;
+    text = (char*)malloc(sizeof(char)*textsize);
+    while(1){
+        nbytes = read(fd, buffer, BUFFERSIZE);
+        if(nbytes == -1){
+            fprintf(stderr, "error reading input\n");
+            return NULL;
+        }
+        strcat(text, buffer);
+        if(nbytes == textsize){
+            textsize+=BUFFERSIZE;
+            text = (char*)realloc(text, textsize);
+            flush(buffer, BUFFERSIZE);
+        }else break;
+    }
+    close(fd);
+    return text;
+}
+
+/**
+ * @brief Reads from a pipe
+ * 
+ * @param fd arrway with the pipe's file descriptors
+ * @param text where the read text will be stored
+ * @return char* pointer to the read text
+ */
+char* rfromp(int fd[2], char* text){
+    close(fd[WRITE_END]);
+    return rfrom(fd[READ_END], text);
 }
 
 int main(int argc, char* argv[]){
@@ -183,57 +279,18 @@ int main(int argc, char* argv[]){
     }
 
     if (pid > 0) {
-        int inbuffersize = BUFFERSIZE;
-        char* inbuffer = (char*)malloc(sizeof(char)*inbuffersize);
-        while(1){
-            nbytes = read(STDIN_FILENO, buffer, BUFFERSIZE);
-            if(nbytes == -1){
-                fprintf(stderr, "error reading input\n");
-                exit(EXIT_FAILURE);
-            }
-            strcat(inbuffer, buffer);
-            if(nbytes==BUFFERSIZE){
-                inbuffersize+=BUFFERSIZE;
-                inbuffer = (char*)realloc(inbuffer, inbuffersize);
-                flush(buffer);
-            }else break;
-        }
+        char* inbuffer = rfrom(STDIN_FILENO, inbuffer);
         close(fd1[READ_END]);
-        write(fd1[WRITE_END], inbuffer, inbuffersize);
+        write(fd1[WRITE_END], inbuffer, strlen(inbuffer));
         close(fd1[WRITE_END]);
         waitpid(0, NULL, 0);
-        inbuffer = (char*)malloc(sizeof(char)*inbuffersize);
-        while(1){
-            nbytes = read(fd2[READ_END], buffer, BUFFERSIZE);
-            if(nbytes == -1){
-                fprintf(stderr, "error reading input\n");
-                exit(EXIT_FAILURE);
-            }
-            strcat(inbuffer, buffer);
-            flush(buffer);
-            if(nbytes < BUFFERSIZE) break;
-        }
+        inbuffer = rfromp(fd2, inbuffer);
         write(STDOUT_FILENO, inbuffer, strlen(inbuffer));
         exit(EXIT_SUCCESS);
 
     } else {
         int textsize = BUFFERSIZE;
-        char* text = (char*)malloc(sizeof(char)*textsize);
-        close(fd1[WRITE_END]);
-        while(1){
-            nbytes = read(fd1[READ_END], buffer, BUFFERSIZE);
-            if(nbytes == -1){
-                fprintf(stderr, "error reading input\n");
-                exit(EXIT_FAILURE);
-            }
-            strcat(text, buffer);
-            if(nbytes == textsize){
-                textsize+=BUFFERSIZE;
-                text = (char*)realloc(text, textsize);
-                flush(buffer);
-            }else break;
-        }
-        close(fd1[READ_END]);
+        char* text = rfromp(fd1, text);
         cypher cyphr;
         loadCypher(&cyphr);
         char* cypheredtext = cypherText(&cyphr, text);
