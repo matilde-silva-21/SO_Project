@@ -190,7 +190,8 @@ char* cypherText(cypher* cyphr, char* text){
             foundWord=1;
         }
         if(foundWord){
-            int where;
+            int index, target;
+            //Write my own strcmp to make it easier
             if(!compareCypher(cyphr, &index, &target)){
                 int where;
                 if(!hasPunct(&where)){
@@ -279,6 +280,7 @@ int main(int argc, char* argv[]){
     }
 
     if (pid > 0) {
+        //Try and make this not save text in memory
         char* inbuffer = rfrom(STDIN_FILENO, inbuffer);
         close(fd1[READ_END]);
         write(fd1[WRITE_END], inbuffer, strlen(inbuffer));
