@@ -66,21 +66,6 @@ cypher* loadCypher(cypher* cyphr){
 }
 
 /**
- * @brief Sees if a string has punctuation in it
- * 
- * @param where the index where the punctuation starts
- * @return int 0 if there is punctuation, 1 otherwise
- */
-int hasPunct(int *where){
-    for(int i = 0; i < strlen(wordBuffer); i++)
-        if(ispunct(wordBuffer[i])){
-            *where = i;
-            return 0;
-        }
-    return 1;
-}
-
-/**
  * @brief Compares two words to see if they're the same
  * 
  * @param w1 the first word
@@ -89,19 +74,20 @@ int hasPunct(int *where){
  */
 int cmpwrd(char* w1, char* w2){
     int where;
-    if(strlen(w1) == strlen(w2)) return (!strcmp(w1, w2));
+    if(strlen(w1) == strlen(w2) || strlen(w1) < strlen(w2)) 
+        return (!strcmp(w1, w2));
     else{
         int i = 0, size;
         if(strlen(w1) < strlen(w2)) size = strlen(w1);
         else size = strlen(w2);
         while(i < size){
-            if(w2[i] == w1[0]) break;
+            if(w1[i] == w2[0]) break;
             else i++;
         }
-        if(i == size-1) return 0;
+        if(i == size) return 0;
         else{
             for(int j = 0; j < size; j++)
-                if(w2[i+j] != w1[j]) return 0;
+                if(w1[i+j] != w2[j]) return 0;
         }
         return 1; 
     }
@@ -117,6 +103,12 @@ int cmpwrd(char* w1, char* w2){
  * @return int 0 if the wordBuffer is present in the cypher table, 1 otherwise
  */
 int compareCypher(cypher* cyphr, int* index, int* target){
+    if(*index >= cyphr->size){
+        fprintf(stderr, "tried to access invalid memory position\n"
+                        "source: compareCypher\n"
+                        "position: %d max: %d", *index, cyphr->size);
+        exit(EXIT_FAILURE);
+    }
     for(int i=0;i<cyphr->size;i++){
             if(!cmpwrd(wordBuffer, cyphr->table[i].target)){
                 if(cmpwrd(wordBuffer, cyphr->table[i].swap)){
@@ -134,8 +126,13 @@ int compareCypher(cypher* cyphr, int* index, int* target){
     return 1;
 }
 
+/**
+ * @brief Cyphers the contents of wordBuffer
+ * 
+ * @param cypher the word to be used as cypher
+ */
 void cypherWord(char* cypher){
-    char* word;
+    char* word = (char*)malloc(sizeof(char)*WORDSIZE);
     strcpy(word, wordBuffer);
     flush(wordBuffer, WORDSIZE);
     int j, i=0;
@@ -148,76 +145,12 @@ void cypherWord(char* cypher){
         i++;
     }
     for(;j < strlen(word);j++){
-        if(ispunct(word[j])){
+        if(ispunct(word[j]) || isspace(word[j])){
             wordBuffer[i] = word[j];
             i++;
         }
     }
-}
-
-/**
- * @brief Cyphers words when there's punctuation at the start of the string
- * 
- * @param cyphr the cypher table
- * @param index index of the cypher table to be accessed
- * @param target if 0 swaps target for swap, if 1 swaps swap for target
- */
-void handlePrefix(cypher* cyphr, int index, int target){
-    char lastChar = wordBuffer[strlen(wordBuffer)-1];
-    int i=1;
-    char* shift;
-    if(target) shift = cyphr->table[index].target;
-    else shift = cyphr->table[index].swap;
-    for(;i<strlen(shift);i++)
-        wordBuffer[i]=shift[i];
-    wordBuffer[i] = lastChar;
-    wordBuffer[i+1]='\0';
-}
-
-/**
- * @brief Cyphers words when there's punctuation at the end of the string
- * 
- * @param cyphr the cypher table
- * @param index the index of the cypher table to be accessed
- * @param where index of the string where punctuation starts
- * @param target if 0 swaps target for swap, if 1 swaps swap for target
- */
-void handleSuffix(cypher* cyphr, int index, int where, int target){
-    char punct[PBUFFSIZE];
-    int i = where;
-    for(;wordBuffer[i]!='\0';i++){
-        punct[i-where]=wordBuffer[i];
-    }
-    punct[i-where] = '\0';
-    char*shift;
-    if(target) shift = cyphr->table[index].target;
-    else shift = cyphr->table[index].swap;
-    int usedBuffer = strlen(wordBuffer);
-    for(i=0;i<strlen(shift);i++)
-        wordBuffer[i]=shift[i];
-    for(int j=0;punct[j]!='\0';j++){
-        wordBuffer[i+j]=punct[j];
-    }
-    wordBuffer[i+strlen(punct)]='\0';
-}
-
-/**
- * @brief Cyphers words when there is no punctuation involved
- * 
- * @param cyphr the cypher table
- * @param index the index of the cypher table
- * @param target if 0 swaps target for swap, if 1 swaps swap for target
- */
-void handleNoffix(cypher* cyphr, int index, int target){
-    char lastChar = wordBuffer[strlen(wordBuffer)-1];
-    int i=0;
-    char*shift;
-    if(target) shift = cyphr->table[index].target;
-    else shift = cyphr->table[index].swap;
-    for(;i<strlen(shift);i++)
-        wordBuffer[i]=shift[i];
-    wordBuffer[i]=lastChar;
-    wordBuffer[i+1]='\0';
+    free(word);
 }
 
 /**
@@ -227,9 +160,8 @@ void handleNoffix(cypher* cyphr, int index, int target){
  * @param text the text to be cyphered
  * @return char* pointer to the cyphered text
  */
-char* cypherText(cypher* cyphr, char* text){
-    char* cypheredText;
-    strcpy(cypheredText, "\0");
+void cypherText(cypher* cyphr, char* text){
+    char* cypheredText = (char*)malloc(sizeof(char)*strlen(text));
     int lastIndex = 0, foundWord = 0;
     for(int i = 0; i <strlen(text); i++){
         if(text[i] == ' ' || text[i] == '\n'){
@@ -241,24 +173,17 @@ char* cypherText(cypher* cyphr, char* text){
             foundWord=1;
         }
         if(foundWord){
-            int i, target;
-            if(!compareCypher(cyphr, &i, &target)){
-                if(!target) cypherWord(cyphr->table[i].target);
-                else cypherWord(cyphr->table[i].swap);
-                /*
-                int where;
-                if(!hasPunct(&where)){
-                    if(!where) handlePrefix(cyphr, index, target);
-                    else handleSuffix(cyphr, index, where, target);
-                }
-                else handleNoffix(cyphr, index, target);*/
+            int index, target;
+            if(!compareCypher(cyphr, &index, &target)){
+                if(!target) cypherWord(cyphr->table[index].swap);
+                else cypherWord(cyphr->table[index].target);
             }
             strcat(cypheredText, wordBuffer);
             foundWord=0;
         }
     }
-    text = cypheredText;
-    return cypheredText;
+    strcpy(text, cypheredText);
+    free(cypheredText);
 }
 
 /**
@@ -282,21 +207,24 @@ void flush(char* buffer, int buffersize){
 char* rfrom(int fd, char* text){
     char buffer[BUFFERSIZE];
     int textsize = BUFFERSIZE, nbytes;
-    text = (char*)malloc(sizeof(char)*textsize);
+    char* textbuffer = (char*)malloc(sizeof(char)*textsize);
     while(1){
         nbytes = read(fd, buffer, BUFFERSIZE);
         if(nbytes == -1){
             fprintf(stderr, "error reading input\n");
-            return NULL;
+            exit(EXIT_FAILURE);
         }
-        strcat(text, buffer);
+        strcat(textbuffer, buffer);
         if(nbytes == textsize){
             textsize+=BUFFERSIZE;
-            text = (char*)realloc(text, textsize);
+            textbuffer = (char*)realloc(textbuffer, textsize);
             flush(buffer, BUFFERSIZE);
         }else break;
     }
     close(fd);
+    text = (char*)malloc(sizeof(char)*strlen(textbuffer));
+    strcpy(text, textbuffer);
+    free(textbuffer);
     return text;
 }
 
@@ -309,13 +237,14 @@ char* rfrom(int fd, char* text){
  */
 char* rfromp(int fd[2], char* text){
     close(fd[WRITE_END]);
-    return rfrom(fd[READ_END], text);
+    text = rfrom(fd[READ_END], text);
+    close(fd[READ_END]);
+    return text;
 }
 
 int main(int argc, char* argv[]){
     int fd1[2], fd2[2], nbytes;
     pid_t pid;
-    char buffer[BUFFERSIZE];
     
     if(pipe(fd1) < 0) {
         perror( "fd1 pipe error\n");
@@ -340,6 +269,7 @@ int main(int argc, char* argv[]){
         waitpid(0, NULL, 0);
         inbuffer = rfromp(fd2, inbuffer);
         write(STDOUT_FILENO, inbuffer, strlen(inbuffer));
+        free(inbuffer);
         exit(EXIT_SUCCESS);
 
     } else {
@@ -347,10 +277,10 @@ int main(int argc, char* argv[]){
         char* text = rfromp(fd1, text);
         cypher cyphr;
         loadCypher(&cyphr);
-        char* cypheredtext = cypherText(&cyphr, text);
-        write(fd2[WRITE_END], cypheredtext, strlen(cypheredtext));
+        cypherText(&cyphr, text);
+        write(fd2[WRITE_END], text, strlen(text));
         close(fd2[WRITE_END]);
-        
+        free(text);
         exit(EXIT_SUCCESS);
     }
     exit(EXIT_SUCCESS);
