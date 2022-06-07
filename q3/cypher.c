@@ -281,6 +281,7 @@ int main(int argc, char* argv[]){
         write(fd2[WRITE_END], text, strlen(text));
         close(fd2[WRITE_END]);
         free(text);
+        free(cyphr.table);
         exit(EXIT_SUCCESS);
     }
     exit(EXIT_SUCCESS);
